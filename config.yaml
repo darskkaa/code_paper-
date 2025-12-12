@@ -1,0 +1,155 @@
+# ==============================================================================
+# LTDv2 THERMAL DETECTION - VALIDATED CONFIG (v2)
+# ==============================================================================
+# Target: 0.55+ weighted mAP@50 (current: 0.467)
+# DOUBLE-CHECKED: All parameters verified against Ultralytics YOLO11 docs
+# ==============================================================================
+
+hydra:
+  run:
+    dir: ${hydra:runtime.cwd}/outputs
+
+# ==============================================================================
+# SYSTEM
+# ==============================================================================
+seed: 42
+numClass: 4
+currentDir: ${hydra:runtime.cwd}
+
+# MODEL CHECKPOINT - Update this path after training
+modelCheckpoint: yolo11m.pt /last.pt
+
+# ==============================================================================
+# SUBMISSION PATHS
+# ==============================================================================
+submission:
+  type: 'val'
+  valTemplate: ${hydra:runtime.cwd}/submission_template_development.json
+  testTemplate: ${hydra:runtime.cwd}/submission_template_testing.json
+
+# ==============================================================================
+# TRAINING CORE
+# ==============================================================================
+epochs: 50               # Short run for deadline
+imgsz: 480               # Reduced from 640 (constraint)
+batch: 96                # Safe at 480px on RTX 5090 (31.8GB VRAM)
+workers: 48              # Keep high for fast loading
+cache: false             # Disable to save RAM for batch=96
+amp: true                # FP16 training for speed
+pretrained: true         # Start from pretrained weights
+save_period: 5           # Checkpoint every 5 epochs
+plots: true              # Generate training plots
+verbose: true            # Show progress
+
+# DATASET FRACTION
+fraction: 1.0            # Use full dataset
+
+# ==============================================================================
+# OPTIMIZER - SGD (proven stable)
+# ==============================================================================
+optimizer: SGD
+momentum: 0.937          # Standard YOLO momentum
+weight_decay: 0.0005     # Standard L2 regularization
+
+# ==============================================================================
+# LEARNING RATE SCHEDULE
+# ==============================================================================
+# Default: lr0=0.01, lrf=0.01 → final LR = 0.0001 (100x decay over 100 epochs)
+# For 50 epochs: lrf=0.1 → final LR = 0.001 (10x decay) - more appropriate
+
+lr0: 0.01                # Standard initial LR
+lrf: 0.1                 # Final LR fraction: 0.01 * 0.1 = 0.001
+                         # (10x decay appropriate for 50 epochs)
+cos_lr: true             # Cosine annealing (smoother than linear)
+
+# ==============================================================================
+# WARMUP (PREVENTS EPOCH 6 CRASH)
+# ==============================================================================
+# Default: warmup_epochs=3.0 (confirmed in default.yaml)
+# Research: 4-6% of total epochs recommended
+# For 50 epochs: 3.0 = 6% ✓
+
+warmup_epochs: 3.0       # Default value, 6% of 50 epochs
+warmup_momentum: 0.8     # Default value (transitions to 0.937)
+warmup_bias_lr: 0.1      # Default value
+
+# ==============================================================================
+# LOSS WEIGHTS (keep defaults)
+# ==============================================================================
+# Note: fl_gamma is NOT a valid Ultralytics parameter
+# Focal loss gamma is hardcoded at 1.5 in ultralytics/utils/loss.py
+
+box: 7.5                 # Box regression loss (default)
+cls: 0.5                 # Classification loss (default)
+dfl: 1.5                 # Distribution focal loss (default)
+
+# ==============================================================================
+# THERMAL-SPECIFIC AUGMENTATION
+# ==============================================================================
+# Thermal images are GRAYSCALE - disable color augmentation
+
+hsv_h: 0.0               # DISABLED - no hue in grayscale thermal
+hsv_s: 0.0               # DISABLED - no saturation in grayscale
+hsv_v: 0.4               # Brightness variation (simulates thermal drift)
+
+# ==============================================================================
+# GEOMETRIC AUGMENTATION
+# ==============================================================================
+# Conservative for thermal surveillance (fixed camera angle)
+
+degrees: 0.0             # DISABLED - fixed camera, no rotation needed
+translate: 0.1           # Default translation (10%)
+scale: 0.4               # Reduced from default 0.5 for small objects (12-50px)
+shear: 0.0               # DISABLED - not needed for fixed camera
+perspective: 0.0         # DISABLED - fixed camera
+flipud: 0.0              # DISABLED - surveillance cameras are upright
+fliplr: 0.5              # Horizontal flip OK (default)
+
+# ==============================================================================
+# MULTI-IMAGE AUGMENTATION
+# ==============================================================================
+
+mosaic: 1.0              # CRITICAL: Default, highly effective for small objects
+                         # Docs: "highly effective for improving small object detection"
+close_mosaic: 10         # Default: disable mosaic in final 10 epochs
+mixup: 0.1               # Conservative (default is 0.0)
+
+# IMPORTANT: copy_paste ONLY works for SEGMENTATION tasks
+# LTDv2 is an OBJECT DETECTION task - this parameter is ignored
+copy_paste: 0.0          # Must be 0.0 for detection (no seg masks available)
+
+auto_augment: null       # Disabled for detection
+erasing: 0.0             # Random erasing disabled (default for detection)
+
+# ==============================================================================
+# REGULARIZATION
+# ==============================================================================
+dropout: 0.0             # No dropout (YOLO11 uses other regularization)
+label_smoothing: 0.0     # No label smoothing
+
+# ==============================================================================
+# EARLY STOPPING
+# ==============================================================================
+# Default: patience=100
+# For 50 epochs: patience=30 gives 60% window to find improvement
+
+patience: 30             # Stop if no improvement for 30 epochs (60% of 50)
+
+# ==============================================================================
+# VALIDATION SETTINGS (during training)
+# ==============================================================================
+# Use low conf during validation to catch all predictions for mAP calculation
+# High conf (0.1-0.25) is for inference only
+
+conf: 0.001              # Ultralytics default for val (catches all detections)
+iou: 0.7                 # Default NMS threshold
+max_det: 300             # Default maximum detections per image
+
+# ==============================================================================
+# DATA PATHS
+# ==============================================================================
+dataDir: ${hydra:runtime.cwd}/data/
+trainAnnFile: ${hydra:runtime.cwd}/data/Train.json
+valAnnFile: ${hydra:runtime.cwd}/data/Valid.json
+testAnnFile: ${hydra:runtime.cwd}/data/TestNoLabels.json
+outputDir: ${hydra:runtime.cwd}/checkpoint
